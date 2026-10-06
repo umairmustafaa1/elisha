@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Koi Baat Nahin</title>
+<style>
+:root{--sky:#bfe6f2;--sky2:#fff3d6;--grass:#8fd18a;--ink:#3a2a4a;--pink:#ff7fa8;--btn:#ff7fa8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--sky:#2a3a66;--sky2:#5b4a7a;--grass:#3f7d52;--ink:#fff}}
+:root[data-theme="dark"]{--sky:#2a3a66;--sky2:#5b4a7a;--grass:#3f7d52;--ink:#fff}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--sky);font-family:"Baloo 2","Comic Sans MS","Trebuchet MS",sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:0;right:0;display:flex;justify-content:space-between;padding:0 16px;font-size:26px;font-weight:800;color:var(--ink);pointer-events:none}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(255,243,214,.92);color:#3a2a4a;text-align:center;padding:24px}
+#start h1{margin:0;font-size:40px;line-height:1.1}
+#start p{margin:0;font-size:18px;max-width:300px}
+button{font:inherit;font-size:24px;font-weight:800;color:#fff;background:var(--btn);border:0;border-radius:40px;padding:14px 38px;box-shadow:0 5px 0 #d45a85;cursor:pointer}
+button:active{transform:translateY(3px);box-shadow:0 2px 0 #d45a85}
+button:focus-visible{outline:4px solid #3a2a4a}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><span id="sc">⭐ 0</span><span id="ms"></span></div>
+<div id="start">
+  <h1>Koi Baat Nahin!</h1>
+  <p>Move Elisha to catch the treats. If one drops, she just smiles and says it's okay.</p>
+  <button id="go">Play</button>
+</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,dpr;
+function size(){dpr=window.devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',size);size();
+
+const FOOD=['🍎','🍓','🍦','🧁','🍌','🍪'];
+let girl={x:W/2,tx:W/2,mood:0,say:'',sayT:0,bounce:0};
+let items=[],score=0,misses=0,t=0,spawn=0,running=false,voice=null;
+
+function pickVoice(){const v=speechSynthesis.getVoices();voice=v.find(x=>/^hi/i.test(x.lang))||v.find(x=>/^ur/i.test(x.lang))||null}
+if('speechSynthesis' in window){pickVoice();speechSynthesis.onvoiceschanged=pickVoice}
+function speak(txt){
+  try{
+    if(!('speechSynthesis' in window))return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(txt);
+    u.lang='hi-IN';if(voice)u.voice=voice;
+    u.pitch=2;u.rate=.85;u.volume=1;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function say(text,voiceText){girl.say=text;girl.sayT=1.6;if(voiceText)speak(voiceText)}
+function oops(){girl.mood=1;misses++;say('Koi baat nahin!','कोई बात नहीं');setTimeout(()=>girl.mood=0,1400)}
+
+function move(e){const p=e.touches?e.touches[0]:e;girl.tx=p.clientX}
+addEventListener('pointermove',move);addEventListener('pointerdown',move);
+addEventListener('touchmove',move,{passive:true});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft')girl.tx-=50;if(e.key==='ArrowRight')girl.tx+=50});
+cv.addEventListener('pointerdown',e=>{
+  if(Math.abs(e.clientX-girl.x)<50&&e.clientY>H-190){say('Koi baat nahin!','कोई बात नहीं');girl.bounce=1}
+});
+
+function spawnItem(){
+  items.push({x:40+Math.random()*(W-80),y:-30,v:90+Math.random()*60+Math.min(score*2,90),e:FOOD[Math.floor(Math.random()*FOOD.length)],r:Math.random()*6});
+}
+
+function drawGirl(){
+  const gy=H-70-Math.abs(Math.sin(girl.bounce*Math.PI))*26;
+  const x=girl.x;
+  ctx.save();ctx.translate(x,gy);
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,.15)';ctx.beginPath();ctx.ellipse(0,64,34,8,0,0,7);ctx.fill();
+  // legs
+  ctx.fillStyle='#f2c6a0';ctx.fillRect(-14,36,9,26);ctx.fillRect(5,36,9,26);
+  ctx.fillStyle='#ff5d8f';ctx.beginPath();ctx.ellipse(-10,63,10,6,0,0,7);ctx.ellipse(10,63,10,6,0,0,7);ctx.fill();
+  // dress
+  ctx.fillStyle='#ffb347';ctx.beginPath();ctx.moveTo(-14,-6);ctx.lineTo(14,-6);ctx.lineTo(34,42);ctx.lineTo(-34,42);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#fff';[[-14,28],[0,18],[14,30],[-4,36]].forEach(d=>{ctx.beginPath();ctx.arc(d[0],d[1],3,0,7);ctx.fill()});
+  // arms
+  ctx.strokeStyle='#f2c6a0';ctx.lineWidth=8;ctx.lineCap='round';
+  const up=girl.mood===1;
+  ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(up?-40:-34,up?-18:18);ctx.moveTo(14,0);ctx.lineTo(up?40:34,up?-18:18);ctx.stroke();
+  // pigtails
+  ctx.fillStyle='#2b1a14';
+  ctx.beginPath();ctx.arc(-34,-34,13,0,7);ctx.arc(34,-34,13,0,7);ctx.fill();
+  ctx.fillStyle='#ff5d8f';ctx.beginPath();ctx.arc(-28,-44,5,0,7);ctx.arc(28,-44,5,0,7);ctx.fill();
+  // head
+  ctx.fillStyle='#f6cfab';ctx.beginPath();ctx.arc(0,-34,32,0,7);ctx.fill();
+  // hair top
+  ctx.fillStyle='#2b1a14';ctx.beginPath();ctx.arc(0,-40,32,Math.PI*1.05,Math.PI*1.95);ctx.fill();
+  // cheeks
+  ctx.fillStyle='rgba(255,110,130,.45)';ctx.beginPath();ctx.arc(-19,-24,7,0,7);ctx.arc(19,-24,7,0,7);ctx.fill();
+  // eyes
+  ctx.fillStyle='#2b1a14';
+  if(girl.mood===1){ctx.lineWidth=3;ctx.strokeStyle='#2b1a14';ctx.beginPath();ctx.arc(-11,-33,5,Math.PI,0);ctx.moveTo(16,-33);ctx.arc(11,-33,5,Math.PI,0);ctx.stroke()}
+  else{ctx.beginPath();ctx.arc(-11,-33,4.5,0,7);ctx.arc(11,-33,4.5,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-9.5,-34.5,1.6,0,7);ctx.arc(12.5,-34.5,1.6,0,7);ctx.fill()}
+  // mouth
+  ctx.strokeStyle='#c2384f';ctx.lineWidth=3;ctx.beginPath();
+  if(girl.mood===1)ctx.arc(0,-24,9,.1,Math.PI-.1);else ctx.arc(0,-22,6,.2,Math.PI-.2);
+  ctx.stroke();
+  ctx.restore();
+  // speech bubble
+  if(girl.sayT>0){
+    ctx.save();ctx.globalAlpha=Math.min(1,girl.sayT*2);
+    ctx.font='800 22px "Baloo 2","Comic Sans MS",sans-serif';
+    const tw=ctx.measureText(girl.say).width+28;
+    let bx=Math.max(tw/2+8,Math.min(W-tw/2-8,x)),by=gy-120;
+    ctx.fillStyle='#fff';ctx.strokeStyle='#ff7fa8';ctx.lineWidth=3;
+    ctx.beginPath();ctx.roundRect(bx-tw/2,by-24,tw,44,22);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x-8,by+19);ctx.lineTo(x,by+34);ctx.lineTo(x+8,by+19);ctx.fillStyle='#fff';ctx.fill();
+    ctx.fillStyle='#3a2a4a';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(girl.say,bx,by-1);
+    ctx.restore();
+  }
+}
+
+function drawBg(){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,getComputedStyle(document.documentElement).getPropertyValue('--sky'));g.addColorStop(1,getComputedStyle(document.documentElement).getPropertyValue('--sky2'));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,.7)';
+  [[.2,.12],[.65,.2],[.9,.08]].forEach((c,i)=>{const cx=((c[0]*W+t*8*(i+1))%(W+160))-80,cy=c[1]*H;ctx.beginPath();ctx.arc(cx,cy,26,0,7);ctx.arc(cx+28,cy+6,22,0,7);ctx.arc(cx-26,cy+8,20,0,7);ctx.fill()});
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--grass');
+  ctx.fillRect(0,H-12-0,W,12);
+  ctx.beginPath();ctx.ellipse(W/2,H+30,W*.7,90,0,0,7);ctx.fill();
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;t+=dt;
+  drawBg();
+  girl.tx=Math.max(40,Math.min(W-40,girl.tx));
+  girl.x+=(girl.tx-girl.x)*Math.min(1,dt*10);
+  if(girl.sayT>0)girl.sayT-=dt;
+  if(girl.bounce>0)girl.bounce=Math.max(0,girl.bounce-dt*2.2);
+  if(running){
+    spawn-=dt;if(spawn<=0){spawnItem();spawn=Math.max(.7,1.5-score*.02)}
+    const gy=H-70;
+    for(const it of items){
+      it.y+=it.v*dt;
+      if(!it.done&&it.y>gy-70&&it.y<gy+10&&Math.abs(it.x-girl.x)<42){
+        it.done=1;score++;girl.bounce=1;
+        document.getElementById('sc').textContent='⭐ '+score;
+        if(score%5===0)say('Yay!','यय')
+      }
+      if(!it.done&&it.y>H-20){it.done=1;it.splat=1;oops()}
+    }
+    items=items.filter(i=>!i.done||(i.splat&&(i.y+=0,false)));
+    items=items.filter(i=>!i.done);
+  }
+  ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='36px serif';
+  for(const it of items)ctx.fillText(it.e,it.x,it.y);
+  drawGirl();
+  requestAnimationFrame(loop);
+}
+document.getElementById('go').onclick=()=>{
+  document.getElementById('start').style.display='none';
+  running=true;speak('कोई बात नहीं');girl.say='Koi baat nahin!';girl.sayT=1.6;
+};
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
